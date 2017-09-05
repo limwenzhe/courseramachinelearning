@@ -1,0 +1,108 @@
+---
+title: "Machine Learning Peer-Graded Assignment"
+author: "Lim Wen Zhe"
+date: "August 29, 2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, tidy.opts=list(width.cutoff=60),tidy=TRUE)
+library(caret)
+library(rattle)
+```
+
+## Introduction
+
+This assignment attempts to predict the quality with which exercises are performed, using data from the Qualitative Activity Recognition ("QAR") dataset.
+
+## Data Preparation
+
+The training and test data are downloaded to the working directory and loaded.
+
+```{r loadData}
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "training.csv")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "testing.csv")
+training <- read.csv("training.csv", na.strings = c("NA", ""))
+testing <- read.csv("testing.csv", na.strings = c("NA", ""))
+```
+
+First, we remove columns which are mostly (>90%) missing from the dataset.
+
+```{r missing}
+missing <- sapply(training, function(x) sum(is.na(x))/sum(length(x))) > 0.9
+training <- training[, -which(missing)]
+testing <- testing[, -which(missing)]
+```
+
+Next we check for near-zero variance features in the training dataset, and find that one variable, new_window, has near zero variance. this is also removed from the dataset.
+
+```{r nzv}
+nzv <- nearZeroVar(training, saveMetrics = TRUE)
+nzv[nzv$nzv == TRUE, ]
+training <- training[, -which(nzv$nzv)]
+testing <- testing[, -which(nzv$nzv)]
+```
+
+Finally, the ID variables (reading number, user, timestamps) are removed, and the training set is further split in a 70:30 ratio, with the latter being used for validation.
+
+```{r removeID}
+training <- training[, -(1:5)]
+testing <- testing[, -(1:5)]
+inTrain <- createDataPartition(p = 0.7, y = training$classe, list = FALSE)
+validation <- training[-inTrain, ]
+training <- training[inTrain, ]
+```
+
+## Model Training
+
+We proceed to train 2 models on the data - a  decision tree and random forest. These were chosen due to their high accuracy and ability to deal with non-linear models.
+
+Following this, the overall accuracy of these models in the **testing** set will be used to decide which one is most accurate.
+
+### Training the models
+
+First, we fit a decision tree onto the training data. Printing the tree shows that only classes A and E were predicted in terminal leaves with high purity, with coverage of only 8% each. As a result, the accuracy of the tree in the training set is low, at 53.7%.
+
+```{r dt, cache = TRUE}
+dtFit <- train(classe ~ ., method = "rpart", data = training)
+fancyRpartPlot(dtFit$finalModel)
+dtFit
+```
+
+Next, we fit a random forest.The optimal number of tries is 27, yielding a significantly higher accuracy of 99.5%
+
+```{r rf, cache = TRUE}
+rfFit <- train(classe ~ ., method = "rf", data = training)
+rfFit
+```
+
+### Testing the models
+
+Finally, we use the fitted models to make predictions on the test dataset:
+
+```{r dtTest}
+dtTest <- predict(dtFit, newdata = validation)
+dtConfusion <- confusionMatrix(dtTest, validation$classe)
+dtConfusion
+```
+
+```{r rfTest}
+rfTest <- predict(rfFit, newdata = validation)
+rfConfusion <- confusionMatrix(rfTest, validation$classe)
+rfConfusion
+```
+
+## Conclusion and Test Predictions
+
+The random forest model has a higher out of sample accuracy than the decision tree, and its accuracy is comparable to that in the training set - indicating that over-fitting is not a serious problem.
+
+The random forest model is thus used to predict the 20 cases in the test set:
+
+```{r rfPredict}
+rfPredict <- predict(rfFit, newdata = testing)
+rfPredict
+```
+
+
